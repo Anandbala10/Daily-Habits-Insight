@@ -1,8 +1,7 @@
 # -----------------------------------------
-# 📊 Enhanced Daily Habits Tracker Analysis
-# Dataset: habits_60_days.csv (60 days sample data)
-# Goal: Advanced analysis with statistical rigor, predictive modeling,
-#       and actionable insights for habit optimization
+# 📊 Enhanced Daily Habits Tracker Analysis (Refactored)
+# Goal: Advanced analysis, predictive modeling, and insights
+#       with a focus on code quality, modularity, and reusability.
 # -----------------------------------------
 
 import pandas as pd
@@ -11,280 +10,238 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy import stats
 from sklearn.linear_model import LinearRegression
-from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.preprocessing import StandardScaler
-from sklearn.ensemble import RandomForestRegressor
 import warnings
+import os
 
 warnings.filterwarnings('ignore')
-
 plt.style.use('seaborn-v0_8')
-plt.rcParams['figure.figsize'] = (12, 8)
-
-# -----------------------------------------
-# Step 1: Enhanced Data Loading & Preprocessing
-# -----------------------------------------
-try:
-    df = pd.read_csv("habits_60_days.csv")
-    print("✅ Dataset loaded successfully!")
-    print(f"📊 Dataset shape: {df.shape}")
-except FileNotFoundError:
-    print("❌ Error: 'habits_60_days.csv' not found.")
-    exit()
-
-# Convert date and add time-based features
-df["Date"] = pd.to_datetime(df["Date"])
-df['DayOfWeek'] = df['Date'].dt.day_name()
-df['WeekNumber'] = df['Date'].dt.isocalendar().week
-df['Month'] = df['Date'].dt.month
-df['IsWeekend'] = df['Date'].dt.weekday >= 5
-
-# Create enhanced features
-df["ProductivityScore"] = (df["StudyHours"] + (df["Exercise(mins)"] / 60)) - df["ScreenTime(hrs)"]
-df["SleepQuality"] = np.where(df["SleepHours"] >= 7, "Good", "Poor")
-df["HighMood"] = df["Mood(1-5)"] >= 4
-
-print("\n--- Enhanced Dataset Info ---")
-print(df.info())
-print(f"\n--- Date Range: {df['Date'].min().date()} to {df['Date'].max().date()} ---")
-
-# -----------------------------------------
-# Step 2: Advanced Statistical Analysis
-# -----------------------------------------
-print("\n" + "=" * 60)
-print("📈 STATISTICAL ANALYSIS")
-print("=" * 60)
 
 
-# Correlation analysis with significance testing
-def correlation_with_significance(df, col1, col2):
-    """Calculate correlation coefficient and p-value"""
-    corr_coef, p_value = stats.pearsonr(df[col1], df[col2])
-    significance = "***" if p_value < 0.001 else "**" if p_value < 0.01 else "*" if p_value < 0.05 else ""
-    return corr_coef, p_value, significance
+# --- Helper Functions ---
+def print_header(title):
+    """Prints a formatted header to the console."""
+    print("\n" + "=" * 60)
+    print(f"📊 {title.upper()}")
+    print("=" * 60)
 
 
-# Key correlations with statistical significance
-key_correlations = [
-    ("SleepHours", "Mood(1-5)"),
-    ("StudyHours", "Mood(1-5)"),
-    ("ScreenTime(hrs)", "SleepHours"),
-    ("Exercise(mins)", "Mood(1-5)"),
-    ("ProductivityScore", "Mood(1-5)")
-]
+# --- Core Logic Functions ---
 
-print("\n🔍 Key Correlations with Statistical Significance:")
-print("-" * 55)
-for col1, col2 in key_correlations:
-    corr, p_val, sig = correlation_with_significance(df, col1, col2)
-    print(f"{col1:15} ↔ {col2:15}: {corr:6.3f} {sig:3} (p={p_val:.4f})")
+def load_and_preprocess_data(filepath="habits_60_days.csv"):
+    """
+    Loads the dataset from a CSV file, adds time-based and engineered features.
+    Returns a pandas DataFrame.
+    """
+    print_header("Step 1: Data Loading & Preprocessing")
+    try:
+        df = pd.read_csv(filepath)
+        print(f"✅ Dataset loaded successfully! Shape: {df.shape}")
+    except FileNotFoundError:
+        print(f"❌ Error: '{filepath}' not found. Please ensure the file is in the correct directory.")
+        return None
 
-print("\nSignificance levels: *** p<0.001, ** p<0.01, * p<0.05")
+    # Convert date and add time-based features
+    df["Date"] = pd.to_datetime(df["Date"])
+    df['DayOfWeek'] = df['Date'].dt.day_name()
+    df['WeekNumber'] = df['Date'].dt.isocalendar().week
+    df['IsWeekend'] = df['Date'].dt.weekday >= 5
 
-# -----------------------------------------
-# Step 3: Weekly Pattern Analysis
-# -----------------------------------------
-print("\n" + "=" * 60)
-print("📅 WEEKLY PATTERN ANALYSIS")
-print("=" * 60)
+    # Create enhanced features
+    df["ProductivityScore"] = (df["StudyHours"] + (df["Exercise(mins)"] / 60)) - df["ScreenTime(hrs)"]
+    df["SleepQuality"] = np.where(df["SleepHours"] >= 7, "Good", "Poor")
 
-# Weekly averages
-weekly_patterns = df.groupby('DayOfWeek')[
-    ['SleepHours', 'StudyHours', 'ScreenTime(hrs)', 'Exercise(mins)', 'Mood(1-5)']].mean()
-day_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-weekly_patterns = weekly_patterns.reindex(day_order)
+    print(f"--- Date Range: {df['Date'].min().date()} to {df['Date'].max().date()} ---")
+    return df
 
-print("\n📊 Average Habits by Day of Week:")
-print(weekly_patterns.round(2))
 
-# Weekend vs Weekday comparison
-weekend_comparison = df.groupby('IsWeekend')[
-    ['SleepHours', 'StudyHours', 'ScreenTime(hrs)', 'Exercise(mins)', 'Mood(1-5)']].mean()
-weekend_comparison.index = ['Weekday', 'Weekend']
-print("\n🏠 Weekend vs Weekday Comparison:")
-print(weekend_comparison.round(2))
+def run_statistical_analysis(df):
+    """
+    Performs correlation and comparative statistical analysis.
+    Prints the results to the console.
+    """
+    print_header("Step 2: Statistical Analysis")
 
-# Statistical test for weekend differences
-mood_weekday = df[~df['IsWeekend']]['Mood(1-5)']
-mood_weekend = df[df['IsWeekend']]['Mood(1-5)']
-t_stat, p_val = stats.ttest_ind(mood_weekday, mood_weekend)
-print(f"\n📊 Weekend vs Weekday Mood Difference:")
-print(f"   T-statistic: {t_stat:.3f}, P-value: {p_val:.4f}")
-print(f"   {'Significant difference' if p_val < 0.05 else 'No significant difference'}")
+    # Key correlations with statistical significance
+    key_correlations = [
+        ("SleepHours", "Mood(1-5)"),
+        ("StudyHours", "Mood(1-5)"),
+        ("ScreenTime(hrs)", "SleepHours"),
+        ("Exercise(mins)", "Mood(1-5)"),
+        ("ProductivityScore", "Mood(1-5)")
+    ]
 
-# -----------------------------------------
-# Step 4: Advanced Visualizations
-# -----------------------------------------
-print("\n" + "=" * 60)
-print("📊 CREATING ADVANCED VISUALIZATIONS")
-print("=" * 60)
+    print("\n🔍 Key Correlations with Statistical Significance:")
+    print("-" * 55)
+    for col1, col2 in key_correlations:
+        corr_coef, p_value = stats.pearsonr(df[col1], df[col2])
+        significance = "***" if p_value < 0.001 else "**" if p_value < 0.01 else "*" if p_value < 0.05 else ""
+        print(f"{col1:17} ↔ {col2:17}: {corr_coef:6.3f} {significance:3} (p={p_value:.4f})")
+    print("\nSignificance levels: *** p<0.001, ** p<0.01, * p<0.05")
 
-# 1. Enhanced Correlation Heatmap with significance
-fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+    # Weekend vs Weekday comparison T-test
+    mood_weekday = df[~df['IsWeekend']]['Mood(1-5)']
+    mood_weekend = df[df['IsWeekend']]['Mood(1-5)']
+    t_stat, p_val = stats.ttest_ind(mood_weekday, mood_weekend)
 
-# Correlation heatmap
-corr_matrix = df[
-    ['SleepHours', 'StudyHours', 'ScreenTime(hrs)', 'Exercise(mins)', 'Mood(1-5)', 'ProductivityScore']].corr()
-sns.heatmap(corr_matrix, annot=True, cmap="RdBu_r", center=0, fmt='.2f', ax=axes[0, 0])
-axes[0, 0].set_title("Correlation Matrix - All Habits")
+    print(f"\n📊 Weekend vs Weekday Mood Difference:")
+    print(
+        f"   T-statistic: {t_stat:.3f}, P-value: {p_val:.4f} -> {'Significant difference' if p_val < 0.05 else 'No significant difference'}")
 
-# 2. Weekly heatmap
-weekly_pivot = df.pivot_table(values='Mood(1-5)', index='DayOfWeek', columns='WeekNumber', aggfunc='mean')
-weekly_pivot = weekly_pivot.reindex(day_order)
-sns.heatmap(weekly_pivot, cmap="viridis", cbar_kws={'label': 'Mood (1-5)'}, ax=axes[0, 1])
-axes[0, 1].set_title("Mood Patterns: Day of Week vs Week Number")
 
-# 3. Distribution comparison
-df.boxplot(column='Mood(1-5)', by='SleepQuality', ax=axes[1, 0])
-axes[1, 0].set_title("Mood Distribution by Sleep Quality")
-axes[1, 0].set_xlabel("Sleep Quality (7+ hours = Good)")
+def create_and_save_visualizations(df, output_dir="visualizations"):
+    """
+    Generates and saves key visualizations to the specified directory.
+    """
+    print_header("Step 3: Creating and Saving Visualizations")
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+        print(f"📂 Created directory: '{output_dir}'")
 
-# 4. Rolling averages
-df_sorted = df.sort_values('Date')
-df_sorted['Mood_7day'] = df_sorted['Mood(1-5)'].rolling(window=7, center=True).mean()
-df_sorted['Sleep_7day'] = df_sorted['SleepHours'].rolling(window=7, center=True).mean()
+    # 1. Enhanced Correlation Heatmap
+    fig, axes = plt.subplots(2, 2, figsize=(20, 16))
+    fig.suptitle('Habit Analysis Dashboard', fontsize=20, weight='bold')
 
-axes[1, 1].plot(df_sorted['Date'], df_sorted['Mood(1-5)'], alpha=0.3, label='Daily Mood')
-axes[1, 1].plot(df_sorted['Date'], df_sorted['Mood_7day'], linewidth=2, label='7-day Average')
-axes[1, 1].set_title("Mood Trend with 7-day Moving Average")
-axes[1, 1].legend()
-axes[1, 1].tick_params(axis='x', rotation=45)
+    corr_matrix = df[
+        ['SleepHours', 'StudyHours', 'ScreenTime(hrs)', 'Exercise(mins)', 'Mood(1-5)', 'ProductivityScore']].corr()
+    sns.heatmap(corr_matrix, annot=True, cmap="RdBu_r", center=0, fmt='.2f', ax=axes[0, 0], linewidths=.5)
+    axes[0, 0].set_title("Correlation Matrix of Habits and Mood", weight='bold')
 
-plt.tight_layout()
-plt.show()
+    # 2. Mood Distribution by Sleep Quality
+    sns.boxplot(x='SleepQuality', y='Mood(1-5)', data=df, ax=axes[0, 1], palette="pastel")
+    axes[0, 1].set_title("Mood Distribution by Sleep Quality", weight='bold')
+    axes[0, 1].set_xlabel("Sleep Quality (7+ hours = Good)")
 
-# -----------------------------------------
-# Step 5: Predictive Modeling
-# -----------------------------------------
-print("\n" + "=" * 60)
-print("🤖 PREDICTIVE MODELING")
-print("=" * 60)
+    # 3. Weekly Mood Patterns Heatmap
+    day_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+    weekly_pivot = df.pivot_table(values='Mood(1-5)', index='DayOfWeek', columns='WeekNumber', aggfunc='mean').reindex(
+        day_order)
+    sns.heatmap(weekly_pivot, cmap="viridis", cbar_kws={'label': 'Average Mood (1-5)'}, ax=axes[1, 0], linewidths=.5)
+    axes[1, 0].set_title("Weekly Mood Heatmap", weight='bold')
 
-# Prepare features for modeling
-feature_cols = ['SleepHours', 'StudyHours', 'ScreenTime(hrs)', 'Exercise(mins)']
-X = df[feature_cols]
-y = df['Mood(1-5)']
+    # 4. Mood Trend with Moving Average
+    df_sorted = df.sort_values('Date')
+    df_sorted['Mood_7day_avg'] = df_sorted['Mood(1-5)'].rolling(window=7, center=True).mean()
+    axes[1, 1].plot(df_sorted['Date'], df_sorted['Mood(1-5)'], alpha=0.4, label='Daily Mood', marker='o',
+                    linestyle='None')
+    axes[1, 1].plot(df_sorted['Date'], df_sorted['Mood_7day_avg'], linewidth=2.5, label='7-day Moving Average',
+                    color='navy')
+    axes[1, 1].set_title("Mood Trend Over Time", weight='bold')
+    axes[1, 1].legend()
+    axes[1, 1].tick_params(axis='x', rotation=45)
 
-# Train-test split
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    save_path = os.path.join(output_dir, "habit_analysis_dashboard.png")
+    plt.savefig(save_path, dpi=150)
+    print(f"✅ Visualizations saved to '{save_path}'")
+    plt.show()
+    plt.close()
 
-# 1. Linear Regression Model
-lr_model = LinearRegression()
-lr_model.fit(X_train, y_train)
-lr_pred = lr_model.predict(X_test)
-lr_r2 = r2_score(y_test, lr_pred)
-lr_mse = mean_squared_error(y_test, lr_pred)
 
-# 2. Random Forest Model
-rf_model = RandomForestRegressor(n_estimators=100, random_state=42)
-rf_model.fit(X_train, y_train)
-rf_pred = rf_model.predict(X_test)
-rf_r2 = r2_score(y_test, rf_pred)
-rf_mse = mean_squared_error(y_test, rf_pred)
+def train_and_evaluate_models(df):
+    """
+    Prepares data, trains Linear Regression and RandomForest models,
+    and returns the trained models and their performance metrics.
+    """
+    print_header("Step 4: Predictive Modeling")
 
-print("\n🎯 Model Performance Comparison:")
-print("-" * 40)
-print(f"Linear Regression:  R² = {lr_r2:.3f}, MSE = {lr_mse:.3f}")
-print(f"Random Forest:      R² = {rf_r2:.3f}, MSE = {rf_mse:.3f}")
+    # Prepare features and target
+    feature_cols = ['SleepHours', 'StudyHours', 'ScreenTime(hrs)', 'Exercise(mins)']
+    X = df[feature_cols]
+    y = df['Mood(1-5)']
 
-# Feature importance from Random Forest
-feature_importance = pd.DataFrame({
-    'Feature': feature_cols,
-    'Importance': rf_model.feature_importances_
-}).sort_values('Importance', ascending=False)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-print(f"\n🔍 Feature Importance (Random Forest):")
-print("-" * 35)
-for _, row in feature_importance.iterrows():
-    print(f"{row['Feature']:15}: {row['Importance']:.3f}")
+    # Scale features - Best Practice
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
 
-# Linear regression coefficients
-lr_coef = pd.DataFrame({
-    'Feature': feature_cols,
-    'Coefficient': lr_model.coef_
-}).sort_values('Coefficient', key=abs, ascending=False)
+    # --- Models ---
+    models = {
+        "Linear Regression": LinearRegression(),
+        "Random Forest": RandomForestRegressor(n_estimators=100, random_state=42)
+    }
 
-print(f"\n📊 Linear Regression Coefficients:")
-print("-" * 35)
-for _, row in lr_coef.iterrows():
-    direction = "↑" if row['Coefficient'] > 0 else "↓"
-    print(f"{row['Feature']:15}: {row['Coefficient']:6.3f} {direction}")
+    results = {}
 
-# -----------------------------------------
-# Step 6: Habit Optimization Recommendations
-# -----------------------------------------
-print("\n" + "=" * 60)
-print("💡 PERSONALIZED HABIT RECOMMENDATIONS")
-print("=" * 60)
+    print("\n🎯 Model Performance Comparison:")
+    print("-" * 40)
 
-# Calculate optimal ranges based on top quartile mood days
-high_mood_days = df[df['Mood(1-5)'] >= df['Mood(1-5)'].quantile(0.75)]
-low_mood_days = df[df['Mood(1-5)'] <= df['Mood(1-5)'].quantile(0.25)]
+    for name, model in models.items():
+        model.fit(X_train_scaled, y_train)
+        y_pred = model.predict(X_test_scaled)
+        r2 = r2_score(y_test, y_pred)
+        mse = mean_squared_error(y_test, y_pred)
+        results[name] = {'model': model, 'r2': r2, 'mse': mse, 'scaler': scaler, 'features': feature_cols}
+        print(f"{name:<20} R² = {r2:.3f}, MSE = {mse:.3f}")
 
-print("\n🎯 Optimal Habit Ranges (based on high-mood days):")
-print("-" * 50)
-for col in ['SleepHours', 'StudyHours', 'ScreenTime(hrs)', 'Exercise(mins)']:
-    optimal_mean = high_mood_days[col].mean()
-    optimal_std = high_mood_days[col].std()
-    current_mean = df[col].mean()
+    return results
 
-    print(f"{col:15}: {optimal_mean:5.1f} ± {optimal_std:4.1f} (current: {current_mean:5.1f})")
 
-# Days analysis
-print(f"\n📅 Best vs Worst Days Analysis:")
-print("-" * 35)
-print(f"High mood days ({len(high_mood_days)} days): Avg mood = {high_mood_days['Mood(1-5)'].mean():.2f}")
-print(f"Low mood days  ({len(low_mood_days)} days): Avg mood = {low_mood_days['Mood(1-5)'].mean():.2f}")
+def generate_actionable_insights(df, model_results):
+    """
+    Generates and prints personalized habit recommendations based on
+    statistical analysis and model feature importances.
+    """
+    print_header("Step 5: Actionable Insights & Recommendations")
 
-# Weekend recommendations
-if weekend_comparison.loc['Weekend', 'Mood(1-5)'] > weekend_comparison.loc['Weekday', 'Mood(1-5)']:
-    print(f"\n🏖️  You tend to be happier on weekends! Consider incorporating weekend habits into weekdays.")
-else:
-    print(f"\n💼 You maintain better habits on weekdays! Try to maintain structure on weekends.")
+    # Optimal ranges from top quartile mood days
+    high_mood_days = df[df['Mood(1-5)'] >= df['Mood(1-5)'].quantile(0.75)]
+    print("\n🎯 Optimal Habit Ranges (based on your best days):")
+    print("-" * 55)
+    for col in ['SleepHours', 'StudyHours', 'ScreenTime(hrs)', 'Exercise(mins)']:
+        optimal_mean = high_mood_days[col].mean()
+        current_mean = df[col].mean()
+        print(f"{col:17}: Optimal = {optimal_mean:5.1f} | Your Avg = {current_mean:5.1f}")
 
-# -----------------------------------------
-# Step 7: Actionable Insights Summary
-# -----------------------------------------
-print("\n" + "=" * 60)
-print("🎯 KEY INSIGHTS & ACTION ITEMS")
-print("=" * 60)
+    # Feature Importance from the best model (Random Forest in this case often gives good insights)
+    rf_results = model_results["Random Forest"]
+    feature_importance = pd.DataFrame({
+        'Feature': rf_results['features'],
+        'Importance': rf_results['model'].feature_importances_
+    }).sort_values('Importance', ascending=False)
 
-# Top correlations
-top_positive_corr = max(key_correlations, key=lambda x: correlation_with_significance(df, x[0], x[1])[0])
-top_negative_corr = min(key_correlations, key=lambda x: correlation_with_significance(df, x[0], x[1])[0])
+    print("\n🔍 Most Impactful Habits (from Random Forest):")
+    print("-" * 40)
+    print(feature_importance.to_string(index=False))
 
-print(f"\n✅ POSITIVE INSIGHTS:")
-print(f"   • {top_positive_corr[0]} strongly correlates with {top_positive_corr[1]}")
-print(
-    f"   • Best mood days average: {high_mood_days['SleepHours'].mean():.1f}h sleep, {high_mood_days['StudyHours'].mean():.1f}h study")
-print(
-    f"   • Your productivity score peaks when mood is above {df[df['ProductivityScore'] > df['ProductivityScore'].quantile(0.75)]['Mood(1-5)'].mean():.1f}")
+    # Specific Recommendations
+    print("\n💡 SPECIFIC RECOMMENDATIONS:")
+    top_habit = feature_importance.iloc[0]['Feature']
+    print(f"   1. Your mood is most sensitive to '{top_habit}'. Prioritize improving this habit.")
 
-print(f"\n⚠️  AREAS FOR IMPROVEMENT:")
-print(f"   • {top_negative_corr[0]} negatively impacts {top_negative_corr[1]}")
-print(
-    f"   • Screen time over {df[df['Mood(1-5)'] <= 3]['ScreenTime(hrs)'].mean():.1f}h tends to correlate with lower mood")
+    optimal_sleep = high_mood_days['SleepHours'].mean()
+    print(f"   2. Aim for around {optimal_sleep:.1f} hours of sleep, as this is the average on your best days.")
 
-print(f"\n🎯 SPECIFIC RECOMMENDATIONS:")
-optimal_sleep = high_mood_days['SleepHours'].mean()
-current_sleep = df['SleepHours'].mean()
-if optimal_sleep > current_sleep:
-    print(f"   1. Increase sleep by {optimal_sleep - current_sleep:.1f} hours for optimal mood")
+    avg_exercise_on_best_days = high_mood_days['Exercise(mins)'].mean()
+    print(f"   3. Try to get at least {avg_exercise_on_best_days:.0f} minutes of exercise daily.")
 
-optimal_study = high_mood_days['StudyHours'].mean()
-current_study = df['StudyHours'].mean()
-if optimal_study > current_study:
-    print(f"   2. Aim for {optimal_study:.1f} hours of study time (currently: {current_study:.1f})")
+    print("\n" + "=" * 60)
+    print("Analysis Complete! 🎉")
+    print("=" * 60)
 
-print(f"   3. Limit screen time to under {high_mood_days['ScreenTime(hrs)'].quantile(0.75):.1f} hours")
-print(f"   4. Exercise for at least {high_mood_days['Exercise(mins)'].mean():.0f} minutes daily")
 
-print(f"\n📊 TRACKING SUCCESS:")
-print(f"   • Your mood prediction accuracy: {max(lr_r2, rf_r2):.1%}")
-print(f"   • Focus on the top {len([x for x in rf_model.feature_importances_ if x > 0.2])} most impactful habits")
-print(f"   • Review progress weekly using 7-day moving averages")
+# --- Main Execution Block ---
+def main():
+    """
+    Main function to execute the entire data analysis pipeline.
+    """
+    # Define the data source
+    csv_filepath = "habits_60_days.csv"
 
-print("\n" + "=" * 60)
-print("Analysis Complete! 🎉")
-print("=" * 60)
+    # Run the pipeline
+    df = load_and_preprocess_data(csv_filepath)
+
+    if df is not None:
+        run_statistical_analysis(df)
+        create_and_save_visualizations(df)
+        model_results = train_and_evaluate_models(df)
+        generate_actionable_insights(df, model_results)
+
+
+if __name__ == "__main__":
+    main()

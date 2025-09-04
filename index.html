@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Daily Habits Insights</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+        }
+        .card {
+            background-color: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            transition: transform 0.2s ease-in-out;
+        }
+        .card:hover {
+            transform: translateY(-5px);
+        }
+        .section-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #1f2937;
+            margin-bottom: 1rem;
+        }
+        .data-table th, .data-table td {
+            padding: 0.75rem;
+            text-align: left;
+        }
+        .data-table th {
+            font-weight: 600;
+            color: #6b7280;
+        }
+        .data-table tr:nth-child(even) {
+            background-color: #f9fafb;
+        }
+    </style>
+</head>
+<body class="p-8 md:p-12">
+    <div class="max-w-7xl mx-auto">
+        <!-- Dashboard Header -->
+        <header class="text-center mb-12">
+            <h1 class="text-4xl md:text-5xl font-bold text-gray-900 mb-4">Daily Habits Insights</h1>
+            <p class="text-lg text-gray-600 max-w-2xl mx-auto">
+                Upload your own CSV file to discover key insights from your daily habits.
+                The file must contain the following columns: `Date`, `SleepHours`, `StudyHours`, `ScreenTime(hrs)`, `Exercise(mins)`, and `Mood(1-5)`.
+            </p>
+        </header>
+        
+        <!-- File Upload Section -->
+        <div class="mb-8 p-6 card flex flex-col items-center">
+            <label for="csvFile" class="text-gray-700 font-medium mb-4">Select your habits data file (CSV format)</label>
+            <input type="file" id="csvFile" accept=".csv" class="mb-4">
+        </div>
+
+        <!-- Main Content Grid -->
+        <main id="dashboardContent" class="grid grid-cols-1 lg:grid-cols-3 gap-8 hidden">
+
+            <!-- Correlations Section -->
+            <div class="lg:col-span-2 card">
+                <h2 class="section-title">Habit Correlations</h2>
+                <p class="text-gray-500 mb-4">This chart shows how different habits are correlated with your daily mood.</p>
+                <div class="relative h-96">
+                    <canvas id="correlationChart"></canvas>
+                </div>
+                <div class="mt-8 text-sm text-gray-500">
+                    <p><strong>Note:</strong> Higher positive correlation values (closer to +1) mean a habit is strongly associated with a better mood, while negative values (closer to -1) mean it is associated with a lower mood.</p>
+                </div>
+            </div>
+
+            <!-- Key Insights Summary -->
+            <div class="card">
+                <h2 class="section-title">Key Insights & Actions</h2>
+                <div id="insightsList">
+                    <p class="text-gray-500">Analysis is loading...</p>
+                </div>
+            </div>
+
+            <!-- Weekly Patterns Section -->
+            <div class="lg:col-span-3 card">
+                <h2 class="section-title">Weekly & Weekend Patterns</h2>
+                <p class="text-gray-500 mb-4">See how your habits and mood change on different days of the week.</p>
+                <div class="overflow-x-auto">
+                    <table class="data-table w-full text-sm">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="py-2">Day</th>
+                                <th>Sleep (hrs)</th>
+                                <th>Study (hrs)</th>
+                                <th>Screen Time (hrs)</th>
+                                <th>Exercise (min)</th>
+                                <th>Mood (1-5)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="weeklyTableBody" class="text-gray-700">
+                            <!-- Table rows will be inserted here by JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+                <div id="weekendMood" class="mt-6 text-gray-600"></div>
+            </div>
+
+            <!-- Mood Trend Chart -->
+            <div class="lg:col-span-3 card">
+                <h2 class="section-title">Mood Trend Over Time</h2>
+                <p class="text-gray-500 mb-4">Track your mood's daily and 7-day average trends to spot long-term patterns.</p>
+                <div class="relative h-96">
+                    <canvas id="moodTrendChart"></canvas>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- JavaScript for Data Analysis and Visualization -->
+    <script>
+        // Chart instances for management
+        let correlationChart;
+        let moodTrendChart;
+
+        // Function to parse the CSV string into a usable array of objects
+        function parseCSV(csv) {
+            const lines = csv.trim().split('\n');
+            const headers = lines[0].split(',').map(h => h.trim());
+            
+            // Check for required headers
+            const requiredHeaders = ['Date', 'SleepHours', 'StudyHours', 'ScreenTime(hrs)', 'Exercise(mins)', 'Mood(1-5)'];
+            if (!requiredHeaders.every(h => headers.includes(h))) {
+                throw new Error('CSV file is missing one or more required headers.');
+            }
+
+            return lines.slice(1).map(line => {
+                const values = line.split(',');
+                return headers.reduce((obj, header, i) => {
+                    obj[header] = isNaN(Number(values[i])) || values[i] === '' ? values[i] : Number(values[i]);
+                    return obj;
+                }, {});
+            });
+        }
+
+        // Function to calculate Pearson correlation coefficient
+        function pearsonCorrelation(x, y) {
+            const n = x.length;
+            const meanX = x.reduce((a, b) => a + b) / n;
+            const meanY = y.reduce((a, b) => a + b) / n;
+            let numerator = 0;
+            let denominatorX = 0;
+            let denominatorY = 0;
+            for (let i = 0; i < n; i++) {
+                const dx = x[i] - meanX;
+                const dy = y[i] - meanY;
+                numerator += dx * dy;
+                denominatorX += dx * dx;
+                denominatorY += dy * dy;
+            }
+            return numerator / Math.sqrt(denominatorX * denominatorY);
+        }
+
+        // Main function to run analysis and render UI
+        function runAnalysis(data) {
+            const dashboard = document.getElementById('dashboardContent');
+            dashboard.classList.remove('hidden');
+
+            // Clear previous charts and tables
+            if (correlationChart) correlationChart.destroy();
+            if (moodTrendChart) moodTrendChart.destroy();
+            document.getElementById('weeklyTableBody').innerHTML = '';
+            document.getElementById('insightsList').innerHTML = `<p class="text-gray-500">Loading analysis...</p>`;
+
+            // Add derived features
+            data.forEach(d => {
+                d.ProductivityScore = (d.StudyHours + (d['Exercise(mins)'] / 60)) - d['ScreenTime(hrs)'];
+                d.SleepQuality = d.SleepHours >= 7 ? 'Good' : 'Poor';
+                d.DayOfWeek = new Date(d.Date).toLocaleDateString('en-US', { weekday: 'long' });
+            });
+
+            // 1. Calculate Correlations
+            const correlations = [
+                { label: 'Sleep vs Mood', x: data.map(d => d.SleepHours), y: data.map(d => d['Mood(1-5)']), color: '#2563eb' },
+                { label: 'Exercise vs Mood', x: data.map(d => d['Exercise(mins)']), y: data.map(d => d['Mood(1-5)']), color: '#10b981' },
+                { label: 'Study vs Mood', x: data.map(d => d.StudyHours), y: data.map(d => d['Mood(1-5)']), color: '#f59e0b' },
+                { label: 'Screen Time vs Mood', x: data.map(d => d['ScreenTime(hrs)']), y: data.map(d => d['Mood(1-5)']), color: '#ef4444' },
+                { label: 'Screen Time vs Sleep', x: data.map(d => d['ScreenTime(hrs)']), y: data.map(d => d.SleepHours), color: '#ef4444' },
+                { label: 'Productivity vs Mood', x: data.map(d => d.ProductivityScore), y: data.map(d => d['Mood(1-5)']), color: '#a855f7' }
+            ];
+
+            const correlationValues = correlations.map(c => pearsonCorrelation(c.x, c.y));
+            const correlationLabels = correlations.map(c => c.label);
+            const correlationColors = correlations.map(c => c.color);
+
+            // 2. Weekly & Weekend Patterns
+            const weeklyData = {};
+            const dayOrder = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+            dayOrder.forEach(day => weeklyData[day] = { count: 0, Sleep: 0, Study: 0, ScreenTime: 0, Exercise: 0, Mood: 0 });
+
+            data.forEach(d => {
+                const day = d.DayOfWeek;
+                if (weeklyData[day]) {
+                    weeklyData[day].count++;
+                    weeklyData[day].Sleep += d.SleepHours;
+                    weeklyData[day].Study += d.StudyHours;
+                    weeklyData[day].ScreenTime += d['ScreenTime(hrs)'];
+                    weeklyData[day].Exercise += d['Exercise(mins)'];
+                    weeklyData[day].Mood += d['Mood(1-5)'];
+                }
+            });
+
+            const weeklyTableBody = document.getElementById('weeklyTableBody');
+            dayOrder.forEach(day => {
+                const avg = weeklyData[day];
+                if (avg.count > 0) {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td class="font-semibold">${day}</td>
+                        <td>${(avg.Sleep / avg.count).toFixed(2)}</td>
+                        <td>${(avg.Study / avg.count).toFixed(2)}</td>
+                        <td>${(avg.ScreenTime / avg.count).toFixed(2)}</td>
+                        <td>${(avg.Exercise / avg.count).toFixed(0)}</td>
+                        <td>${(avg.Mood / avg.count).toFixed(2)}</td>
+                    `;
+                    weeklyTableBody.appendChild(row);
+                }
+            });
+
+            const weekdayMood = data.filter(d => d.DayOfWeek !== 'Saturday' && d.DayOfWeek !== 'Sunday').map(d => d['Mood(1-5)']);
+            const weekendMood = data.filter(d => d.DayOfWeek === 'Saturday' || d.DayOfWeek === 'Sunday').map(d => d['Mood(1-5)']);
+            const avgWeekdayMood = weekdayMood.length > 0 ? (weekdayMood.reduce((a, b) => a + b, 0) / weekdayMood.length) : 0;
+            const avgWeekendMood = weekendMood.length > 0 ? (weekendMood.reduce((a, b) => a + b, 0) / weekendMood.length) : 0;
+            document.getElementById('weekendMood').innerText = `Your average mood is ${avgWeekdayMood.toFixed(2)} on weekdays and ${avgWeekendMood.toFixed(2)} on weekends.`;
+
+            // 3. Actionable Insights
+            const highMoodDays = data.filter(d => d['Mood(1-5)'] >= 4); // Top quartile (4 or 5)
+            const insightsList = document.getElementById('insightsList');
+            insightsList.innerHTML = `<ul class="list-disc list-inside space-y-3 text-gray-700"></ul>`;
+            const list = insightsList.querySelector('ul');
+
+            const getInsight = (label, corr) => {
+                const strength = Math.abs(corr) > 0.5 ? 'strongly' : 'moderately';
+                const direction = corr > 0 ? 'positively' : 'negatively';
+                return `<strong>${label}</strong> ${strength} ${direction} correlates with your mood.`;
+            };
+
+            correlationLabels.forEach((label, i) => {
+                const corr = correlationValues[i];
+                if (Math.abs(corr) > 0.2) {
+                    const listItem = document.createElement('li');
+                    listItem.innerHTML = getInsight(label, corr);
+                    list.appendChild(listItem);
+                }
+            });
+
+            if (highMoodDays.length > 0) {
+                const optimalSleep = (highMoodDays.map(d => d.SleepHours).reduce((a, b) => a + b, 0) / highMoodDays.length).toFixed(1);
+                const optimalExercise = (highMoodDays.map(d => d['Exercise(mins)']).reduce((a, b) => a + b, 0) / highMoodDays.length).toFixed(0);
+                
+                let listItem = document.createElement('li');
+                listItem.innerHTML = `On your best days, you averaged <strong>${optimalSleep} hours</strong> of sleep. Aim for this target!`;
+                list.appendChild(listItem);
+
+                listItem = document.createElement('li');
+                listItem.innerHTML = `On high-mood days, you typically exercised for <strong>${optimalExercise} minutes</strong>.`;
+                list.appendChild(listItem);
+            }
+
+            // 4. Charting with Chart.js
+            const ctx1 = document.getElementById('correlationChart').getContext('2d');
+            correlationChart = new Chart(ctx1, {
+                type: 'bar',
+                data: {
+                    labels: correlationLabels,
+                    datasets: [{
+                        label: 'Correlation with Mood',
+                        data: correlationValues,
+                        backgroundColor: correlationColors,
+                        borderRadius: 8
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: false,
+                            max: 1,
+                            min: -1
+                        }
+                    }
+                }
+            });
+
+            // 5. Mood Trend Chart (Rolling Averages)
+            const dates = data.map(d => new Date(d.Date).toLocaleDateString());
+            const moods = data.map(d => d['Mood(1-5)']);
+
+            const rollingAverage = (arr, window) => {
+                const result = [];
+                for (let i = 0; i < arr.length; i++) {
+                    const start = Math.max(0, i - Math.floor(window / 2));
+                    const end = Math.min(arr.length, i + Math.ceil(window / 2));
+                    const slice = arr.slice(start, end);
+                    const sum = slice.reduce((a, b) => a + b, 0);
+                    result.push(sum / slice.length);
+                }
+                return result;
+            };
+
+            const rollingMoods = rollingAverage(moods, 7);
+
+            const ctx2 = document.getElementById('moodTrendChart').getContext('2d');
+            moodTrendChart = new Chart(ctx2, {
+                type: 'line',
+                data: {
+                    labels: dates,
+                    datasets: [
+                        {
+                            label: 'Daily Mood',
+                            data: moods,
+                            borderColor: '#9ca3af',
+                            backgroundColor: 'transparent',
+                            pointRadius: 3,
+                            pointHoverRadius: 6,
+                            borderWidth: 1,
+                            tension: 0.4
+                        },
+                        {
+                            label: '7-Day Average Mood',
+                            data: rollingMoods,
+                            borderColor: '#2563eb',
+                            backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                            pointRadius: 0,
+                            borderWidth: 2,
+                            tension: 0.4,
+                            fill: true
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: false,
+                            min: 1,
+                            max: 5
+                        }
+                    }
+                }
+            });
+        }
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            const fileInput = document.getElementById('csvFile');
+            fileInput.addEventListener('change', (event) => {
+                const file = event.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        try {
+                            const csvString = e.target.result;
+                            const data = parseCSV(csvString);
+                            runAnalysis(data);
+                        } catch (error) {
+                            alert('Error processing file: ' + error.message);
+                            console.error('File processing error:', error);
+                            document.getElementById('dashboardContent').classList.add('hidden');
+                        }
+                    };
+                    reader.readAsText(file);
+                }
+            });
+        });
+    </script>
+</body>
+</html>
